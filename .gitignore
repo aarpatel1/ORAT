@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+orat-env/
+venv/
+.env/
+
+# Data
+data/
+
+# Results
+AoRRAT_results/
+runs/
+logs/
+
+# Models
+*.pt
+*.pth
+*.ckpt
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Misc
+.DS_Store

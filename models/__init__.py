@@ -17,3 +17,4 @@ from .lenet_mnist import *
 from .linear import *
 from .fourcnn_mnist import *
 from .mlp import *
+from .resnet20_cifar import resnet20

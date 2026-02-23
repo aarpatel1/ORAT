@@ -162,6 +162,7 @@ if args.dataset == "mnist":
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, pin_memory=True)
     testset = torchvision.datasets.MNIST(root='./data/MNIST', train=False, download=True, transform=transforms.ToTensor())
     test_loader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, pin_memory=True)
+    test_loader_aa = torch.utils.data.DataLoader(testset, batch_size=10000, shuffle=False, pin_memory=True)
 if 'mnist_noise' in args.dataset:
     trainset, testset = dataloader_generation(
         data_path='./data/mnist_noise_data/{}.mat'.format(args.dataset))
