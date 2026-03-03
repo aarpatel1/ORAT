@@ -1,20 +1,29 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
 import numpy as np
 from AA.autoattack.autoattack import AutoAttack as AutoAttack_mod
 from models import *
 
-def cwloss(output, target,confidence=50, num_classes=10):
-    # Compute the probability of the label class versus the maximum other
-    # The same implementation as in repo CAT https://github.com/sunblaze-ucb/curriculum-adversarial-training-CAT
-    target = target.data
-    target_onehot = torch.zeros(target.size() + (num_classes,))
-    target_onehot = target_onehot.cuda()
-    target_onehot.scatter_(1, target.unsqueeze(1), 1.)
-    target_var = Variable(target_onehot, requires_grad=False)
-    real = (target_var * output).sum(1)
-    other = ((1. - target_var) * output - target_var * 10000.).max(1)[0]
-    loss = -torch.clamp(real - other + confidence, min=0.)  # equiv to max(..., 0.)
-    loss = torch.sum(loss)
-    return loss
+def cwloss(output, target, confidence=50):
+    """
+    output: logits [N, C]
+    target: class indices [N]
+    """
+    target = target.long()
+    num_classes = output.size(1)
+
+    # true-class logit
+    real = output.gather(1, target.view(-1, 1)).squeeze(1)
+
+    # max logit among all other classes
+    one_hot = F.one_hot(target, num_classes=num_classes).bool()
+    other = output.masked_fill(one_hot, float('-inf')).max(1).values
+
+    # same sign convention as your original code (negative clamp then sum)
+    loss = -torch.clamp(real - other + confidence, min=0.0)
+    return loss.sum()
 
 def pgd(model, data, target, epsilon, step_size, num_steps,loss_fn,category,rand_init):
     model.eval()

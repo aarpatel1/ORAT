@@ -1,6 +1,9 @@
 import os
 import argparse
 import torchvision
+import torch
+import torch.nn as nn
+from torch.autograd import Variable
 import torch.optim as optim
 from torchvision import transforms
 import datetime
@@ -62,6 +65,8 @@ def train(epoch, model, train_loader, optimizer):
     starttime = datetime.datetime.now()
     loss_sum = 0
     for batch_idx, (data, target) in enumerate(train_loader):
+        if batch_idx % 50 == 0:
+            print(f"epoch {epoch} batch {batch_idx}/{len(train_loader)}")
         data, target = data.cuda(), target.cuda()
 
         # Get adversarial training data via PGD
@@ -152,16 +157,19 @@ if args.dataset == "cifar10":
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True)
     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
+    #test_loader_aa = torch.utils.data.DataLoader(testset, batch_size=256, shuffle=False)
 if args.dataset == "svhn":
     trainset = torchvision.datasets.SVHN(root='./data', split='train', download=True, transform=transform_train)
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=2)
     testset = torchvision.datasets.SVHN(root='./data', split='test', download=True, transform=transform_test)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=2)
+    test_loader_aa = torch.utils.data.DataLoader(testset, batch_size=10000, shuffle=False)
 if args.dataset == "mnist":
     trainset = torchvision.datasets.MNIST(root='./data/MNIST', train=True, download=True, transform=transforms.ToTensor())
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, pin_memory=True)
     testset = torchvision.datasets.MNIST(root='./data/MNIST', train=False, download=True, transform=transforms.ToTensor())
     test_loader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, pin_memory=True)
+    test_loader_aa = torch.utils.data.DataLoader(testset, batch_size=10000, shuffle=False)
 if 'mnist_noise' in args.dataset:
     trainset, testset = dataloader_generation(
         data_path='./data/mnist_noise_data/{}.mat'.format(args.dataset))
@@ -188,6 +196,9 @@ if args.net == "lenet_mnist":
 if args.net == "resnet18":
     model = ResNet18().cuda()
     net = "resnet18"
+if args.net == "resnet20":
+    model = resnet20().cuda()
+    net = "resnet20"
 if args.net == "WRN":
   # e.g., WRN-34-10
     model = Wide_ResNet(depth=args.depth, num_classes=10, widen_factor=args.width_factor, dropRate=args.drop_rate).cuda()
@@ -218,7 +229,8 @@ if args.resume:
 else:
     print('==> AoRR Adversarial Training')
     logger_test = Logger(os.path.join(args.out_dir, 'log_results.txt'), title=title)
-    logger_test.set_names(['Epoch', 'Natural Test Acc', 'FGSM Acc', 'PGD20 Acc', 'CW Acc', 'AA Acc'])
+    # Removed AA Acc from set_names for faster test time
+    logger_test.set_names(['Epoch', 'Natural Test Acc', 'FGSM Acc', 'PGD20 Acc', 'CW Acc'])
 
 test_nat_acc = 0
 fgsm_acc = 0
@@ -229,7 +241,7 @@ best_natural=0
 best_fsgm=0
 best_pgd20=0
 best_cw=0
-best_aa=0
+#best_aa=0
 for epoch in range(start_epoch, args.epochs):
     adjust_learning_rate(optimizer, epoch + 1)
     train_time, train_loss= train(epoch, model, train_loader, optimizer)
@@ -239,10 +251,10 @@ for epoch in range(start_epoch, args.epochs):
     loss, fgsm_acc = attack.eval_robust(model, test_loader, perturb_steps=1, epsilon=args.epsilon, step_size=args.epsilon,loss_fn="cent", category="Madry",rand_init=True)
     loss, test_pgd20_acc = attack.eval_robust(model, test_loader, perturb_steps=20, epsilon=args.epsilon, step_size=args.epsilon / 4,loss_fn="cent", category="Madry", rand_init=True)
     loss, cw_acc = attack.eval_robust(model, test_loader, perturb_steps=30, epsilon=args.epsilon, step_size=args.epsilon / 4,loss_fn="cw", category="Madry", rand_init=True)
-    loss, aa_acc = attack.eval_robust_aa(model, test_loader_aa, epsilon=args.epsilon, step_size=args.epsilon)
+    #loss, aa_acc = attack.eval_robust_aa(model, test_loader_aa, epsilon=args.epsilon, step_size=args.epsilon)
 
     print(
-        'Epoch: [%d | %d] | Train Time: %.2f s | train_loss: %.4f | Natural Test Acc %.4f | FGSM Test Acc %.4f | PGD20 Test Acc %.4f | CW Test Acc %.4f |AA Test Acc %.4f |\n' % (
+        'Epoch: [%d | %d] | Train Time: %.2f s | train_loss: %.4f | Natural Test Acc %.4f | FGSM Test Acc %.4f | PGD20 Test Acc %.4f | CW Test Acc %.4f |\n' % (
             epoch + 1,
             args.epochs,
             train_time,
@@ -250,8 +262,7 @@ for epoch in range(start_epoch, args.epochs):
             test_nat_acc,
             fgsm_acc,
             test_pgd20_acc,
-            cw_acc,
-            aa_acc)
+            cw_acc)
     )
 
     if best_natural < test_nat_acc:
@@ -262,19 +273,19 @@ for epoch in range(start_epoch, args.epochs):
         best_pgd20 = test_pgd20_acc
     if best_cw < cw_acc:
         best_cw = cw_acc
-    if best_aa < aa_acc:
-        best_aa = aa_acc
+    #if best_aa < aa_acc:
+    #    best_aa = aa_acc
     if (epoch + 1) == args.epochs:
+        # Removed best_aa from print statement and parameters
         print(
-            'Best: | Natural Best Acc %.4f | FGSM Best Acc %.4f | PGD20 Best Acc %.4f | CW Best Acc %.4f |AA Best Acc %.4f |\n' % (
+            'Best: | Natural Best Acc %.4f | FGSM Best Acc %.4f | PGD20 Best Acc %.4f | CW Best Acc %.4f |\n' % (
                 best_natural,
                 best_fsgm,
                 best_pgd20,
-                best_cw,
-                best_aa)
+                best_cw)
         )
 
-    logger_test.append([epoch + 1, test_nat_acc, fgsm_acc, test_pgd20_acc, cw_acc, aa_acc])
+    logger_test.append([epoch + 1, test_nat_acc, fgsm_acc, test_pgd20_acc, cw_acc])
 
     save_checkpoint({
         'epoch': epoch + 1,
