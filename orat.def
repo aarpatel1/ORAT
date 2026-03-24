@@ -1,0 +1,28 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+
+%labels
+org.opencontainers.image.title="in_orat"
+org.opencontainers.image.description="Outlier Robust Adversarial Training for Landseer"
+org.opencontainers.image.defense_stage="during_training"
+org.opencontainers.image.defense_type="adversarial_training"
+org.opencontainers.image.dataset="CIFAR-10"
+org.opencontainers.image.framework="pytorch"
+
+%files
+    . /workspace/orat
+
+%post
+    set -e
+    cd /workspace/orat
+
+    python -m pip install --upgrade pip
+    pip install --no-cache-dir -r req_ok.txt
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export PYTHONPATH=/workspace/orat:$PYTHONPATH
+
+%runscript
+    cd /workspace/orat
+    exec python main.py "$@"
