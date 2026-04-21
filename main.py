@@ -38,6 +38,12 @@ def get_args():
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--num-workers", type=int, default=2)
     parser.add_argument("--resume", type=str, default="")
+    parser.add_argument(
+        "--eval-every",
+        type=int,
+        default=10,
+        help="Run expensive robust evaluation every N epochs, and always on the final epoch",
+    )
 
     return parser.parse_args()
 
@@ -105,10 +111,16 @@ def main():
         aorr=args.aorr,
         out_dir=args.output,
         resume=args.resume,
+        eval_every=args.eval_every,
     )
 
     model_to_save = model.module if hasattr(model, "module") else model
     torch.save(model_to_save.state_dict(), os.path.join(args.output, "model.pt"))
+
+    np.save(os.path.join(args.output, "data.npy"), x_train.astype(np.float32))
+    np.save(os.path.join(args.output, "labels.npy"), y_train.astype(np.int64))
+    np.save(os.path.join(args.output, "test_data.npy"), x_test.astype(np.float32))
+    np.save(os.path.join(args.output, "test_labels.npy"), y_test.astype(np.int64))
 
     print(f"Saved trained model to {os.path.join(args.output, 'model.pt')}")
 

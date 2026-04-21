@@ -50,6 +50,8 @@ def get_args():
     parser.add_argument('--k', type=int, default=50000, help='k')
     parser.add_argument('--m', type=int, default=500, help='m')
     parser.add_argument('--aorr', type=bool, default=True, help="use aorr or not")
+    parser.add_argument('--eval_every', type=int, default=10,
+                        help='Run expensive robust evaluation every N epochs, and always on the final epoch')
     return parser.parse_args()
 
 
@@ -65,7 +67,6 @@ def train(epoch, model, train_loader, optimizer, device):
 
         data, target = data.to(device), target.to(device)
 
-        # Get adversarial training data via PGD
         output_adv = attack.pgd(
             model,
             data,
@@ -77,7 +78,6 @@ def train(epoch, model, train_loader, optimizer, device):
             category="Madry",
             rand_init=True
         )
-        # output_adv = data
 
         model.train()
         optimizer.zero_grad()
@@ -189,6 +189,7 @@ def run_orat_training(
     aorr,
     out_dir,
     resume='',
+    eval_every=10,
 ):
     global args, lambda_k, lambda_hat, intial_loss
 
@@ -208,6 +209,7 @@ def run_orat_training(
     args.aorr = aorr
     args.out_dir = out_dir
     args.resume = resume
+    args.eval_every = max(1, int(eval_every))
 
     lambda_k = Variable(torch.tensor([0.0], device=device), requires_grad=True)
     lambda_hat = Variable(torch.tensor([0.0], device=device), requires_grad=True)
@@ -234,70 +236,79 @@ def run_orat_training(
         logger_test = Logger(os.path.join(actual_out_dir, 'log_results.txt'), title=title)
         logger_test.set_names(['Epoch', 'Natural Test Acc', 'FGSM Acc', 'PGD20 Acc', 'CW Acc'])
 
-    test_nat_acc = 0
-    fgsm_acc = 0
-    test_pgd20_acc = 0
-    cw_acc = 0
-    best_natural = 0
-    best_fsgm = 0
-    best_pgd20 = 0
-    best_cw = 0
+    test_nat_acc = 0.0
+    fgsm_acc = float("nan")
+    test_pgd20_acc = float("nan")
+    cw_acc = float("nan")
+    best_natural = 0.0
+    best_fsgm = 0.0
+    best_pgd20 = 0.0
+    best_cw = 0.0
 
     for epoch in range(start_epoch, epochs):
         adjust_learning_rate(optimizer, epoch + 1)
         train_time, train_loss = train(epoch, model, train_loader, optimizer, device)
 
         loss, test_nat_acc = attack.eval_clean(model, test_loader)
-        loss, fgsm_acc = attack.eval_robust(
-            model, test_loader,
-            perturb_steps=1,
-            epsilon=epsilon,
-            step_size=epsilon,
-            loss_fn="cent",
-            category="Madry",
-            rand_init=True
-        )
-        loss, test_pgd20_acc = attack.eval_robust(
-            model, test_loader,
-            perturb_steps=20,
-            epsilon=epsilon,
-            step_size=epsilon / 4,
-            loss_fn="cent",
-            category="Madry",
-            rand_init=True
-        )
-        loss, cw_acc = attack.eval_robust(
-            model, test_loader,
-            perturb_steps=30,
-            epsilon=epsilon,
-            step_size=epsilon / 4,
-            loss_fn="cw",
-            category="Madry",
-            rand_init=True
-        )
+
+        should_run_expensive_eval = ((epoch + 1) % args.eval_every == 0) or ((epoch + 1) == epochs)
+
+        if should_run_expensive_eval:
+            loss, fgsm_acc = attack.eval_robust(
+                model, test_loader,
+                perturb_steps=1,
+                epsilon=epsilon,
+                step_size=epsilon,
+                loss_fn="cent",
+                category="Madry",
+                rand_init=True
+            )
+            loss, test_pgd20_acc = attack.eval_robust(
+                model, test_loader,
+                perturb_steps=20,
+                epsilon=epsilon,
+                step_size=epsilon / 4,
+                loss_fn="cent",
+                category="Madry",
+                rand_init=True
+            )
+            loss, cw_acc = attack.eval_robust(
+                model, test_loader,
+                perturb_steps=30,
+                epsilon=epsilon,
+                step_size=epsilon / 4,
+                loss_fn="cw",
+                category="Madry",
+                rand_init=True
+            )
+
+            if best_fsgm < fgsm_acc:
+                best_fsgm = fgsm_acc
+            if best_pgd20 < test_pgd20_acc:
+                best_pgd20 = test_pgd20_acc
+            if best_cw < cw_acc:
+                best_cw = cw_acc
+        else:
+            fgsm_acc = float("nan")
+            test_pgd20_acc = float("nan")
+            cw_acc = float("nan")
+
+        if best_natural < test_nat_acc:
+            best_natural = test_nat_acc
 
         print(
-            'Epoch: [%d | %d] | Train Time: %.2f s | train_loss: %.4f | Natural Test Acc %.4f | FGSM Test Acc %.4f | PGD20 Test Acc %.4f | CW Test Acc %.4f |\n'
+            'Epoch: [%d | %d] | Train Time: %.2f s | train_loss: %.4f | Natural Test Acc %.4f | FGSM Test Acc %s | PGD20 Test Acc %s | CW Test Acc %s |\n'
             % (
                 epoch + 1,
                 epochs,
                 train_time,
                 train_loss,
                 test_nat_acc,
-                fgsm_acc,
-                test_pgd20_acc,
-                cw_acc
+                f"{fgsm_acc:.4f}" if not np.isnan(fgsm_acc) else "skipped",
+                f"{test_pgd20_acc:.4f}" if not np.isnan(test_pgd20_acc) else "skipped",
+                f"{cw_acc:.4f}" if not np.isnan(cw_acc) else "skipped",
             )
         )
-
-        if best_natural < test_nat_acc:
-            best_natural = test_nat_acc
-        if best_fsgm < fgsm_acc:
-            best_fsgm = fgsm_acc
-        if best_pgd20 < test_pgd20_acc:
-            best_pgd20 = test_pgd20_acc
-        if best_cw < cw_acc:
-            best_cw = cw_acc
 
         if (epoch + 1) == epochs:
             print(
@@ -316,7 +327,7 @@ def run_orat_training(
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'test_nat_acc': test_nat_acc,
-            'test_pgd20_acc': test_pgd20_acc,
+            'test_pgd20_acc': test_pgd20_acc if not np.isnan(test_pgd20_acc) else -1.0,
             'optimizer': optimizer.state_dict(),
         }, checkpoint=actual_out_dir)
 
@@ -442,6 +453,7 @@ def main():
         aorr=args.aorr,
         out_dir=args.out_dir,
         resume=args.resume,
+        eval_every=args.eval_every,
     )
 
 

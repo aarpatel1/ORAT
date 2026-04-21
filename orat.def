@@ -2,12 +2,12 @@ Bootstrap: docker
 From: pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
 
 %labels
-org.opencontainers.image.title="in_orat"
-org.opencontainers.image.description="Outlier Robust Adversarial Training for Landseer"
-org.opencontainers.image.defense_stage="during_training"
-org.opencontainers.image.defense_type="adversarial_training"
-org.opencontainers.image.dataset="CIFAR-10"
-org.opencontainers.image.framework="pytorch"
+    org.opencontainers.image.title in_orat
+    org.opencontainers.image.description "Outlier Robust Adversarial Training for Landseer"
+    org.opencontainers.image.defense_stage during_training
+    org.opencontainers.image.defense_type adversarial_training
+    org.opencontainers.image.dataset CIFAR-10
+    org.opencontainers.image.framework pytorch
 
 %files
     . /workspace/orat
